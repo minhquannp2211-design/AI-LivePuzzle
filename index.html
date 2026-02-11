@@ -1,0 +1,1367 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Puzzle — Gesture Snap + Pinch Swap (Gemini-like)</title>
+  <style>
+    :root { --bg:#0b1220; --text:#e6eefc; --muted:#a9b7d6; --lime:#c9ff24; --accent:#5eead4; --warn:#fb7185; --yellow:#fbbf24; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: radial-gradient(1200px 700px at 20% 10%, #132a55, var(--bg)); color:var(--text); }
+    header{ padding:18px 18px 8px; }
+    h1{ margin:0 0 6px; font-size:18px; letter-spacing:0.2px; }
+    .sub{ color:var(--muted); font-size:13px; line-height:1.35; }
+
+    .wrap{ display:grid; grid-template-columns: 440px 1fr; gap:14px; padding:14px 18px 22px; }
+    @media (max-width: 900px){ .wrap{ grid-template-columns: 1fr; } }
+
+    .card{ background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03)); border:1px solid rgba(255,255,255,0.10); border-radius:16px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); overflow:hidden; }
+    .card h2{ margin:0; font-size:14px; padding:12px 12px 0; color:#dbe7ff; }
+    .card .content{ padding:12px; }
+
+    .banner{ display:none; margin: 0 18px 12px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: var(--text); }
+    .banner.warn{ border-color: rgba(251,191,36,0.55); background: rgba(251,191,36,0.10); }
+    .banner.bad{ border-color: rgba(251,113,133,0.55); background: rgba(251,113,133,0.10); }
+    .banner.ok{ border-color: rgba(94,234,212,0.55); background: rgba(94,234,212,0.10); }
+    .banner b{ color:#fff; }
+
+    .controls{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    button{
+      background: rgba(94,234,212,0.12);
+      color: var(--text);
+      border: 1px solid rgba(94,234,212,0.35);
+      padding: 9px 10px;
+      border-radius: 12px;
+      cursor:pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    button:hover{ background: rgba(94,234,212,0.18); }
+    button:disabled{ opacity:0.45; cursor:not-allowed; }
+    .danger{ border-color: rgba(251,113,133,0.5); background: rgba(251,113,133,0.08); }
+    .danger:hover{ background: rgba(251,113,133,0.12); }
+    .secondary{ border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); }
+    .secondary:hover{ background: rgba(255,255,255,0.10); }
+
+    label{ font-size:12px; color:var(--muted); display:flex; gap:8px; align-items:center; }
+    select, input[type="range"], input[type="file"]{
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 8px;
+      border-radius: 12px;
+      font-size: 13px;
+      outline: none;
+      width: 100%;
+    }
+    input[type="checkbox"]{ transform: translateY(1px); }
+
+    .row{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media (max-width: 520px){ .row{ grid-template-columns: 1fr; } }
+
+    video{ width:100%; border-radius: 14px; background:#000; aspect-ratio: 4/3; object-fit: cover; }
+    canvas{ width:100%; height:auto; display:block; border-radius:16px; background: rgba(0,0,0,0.35); }
+
+    .hud{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; }
+    .badge{ font-size:12px; color: var(--muted); }
+    .status{ font-size:12px; padding:6px 10px; border-radius: 999px; border:1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); }
+    .status.ok{ border-color: rgba(94,234,212,0.5); background: rgba(94,234,212,0.10); }
+    .status.bad{ border-color: rgba(251,113,133,0.55); background: rgba(251,113,133,0.10); }
+
+    details{ margin-top: 10px; }
+    summary{ cursor:pointer; color:#cfe0ff; font-size:13px; }
+    pre{ white-space: pre-wrap; word-wrap: break-word; background: rgba(0,0,0,0.25); padding: 10px; border-radius: 12px; border:1px solid rgba(255,255,255,0.10); color:#e8f0ff; font-size:12px; }
+
+    .tiny{ font-size:12px; color: var(--muted); line-height: 1.35; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LIVE PUZZLE </h1>
+    <div class="sub">
+      <b>Phase 1</b>: tạo khung 2 tay → <b>pinch cả 2 tay</b> để <b>SNAP</b>.<br>
+      <b>Phase 2</b>: <b>Index+Thumb pinch</b> để Pick → Drag → Drop để Swap. <b>Hold Fist</b> để reset.
+    </div>
+  </header>
+
+  <div id="banner" class="banner"></div>
+
+  <div class="wrap">
+    <section class="card">
+      <h2>Controls</h2>
+      <div class="content">
+        <video id="video" playsinline autoplay muted></video>
+        <div style="height:10px"></div>
+
+        <div class="controls">
+          <button id="btnStart">Start camera</button>
+          <button id="btnStop" class="danger" disabled>Stop</button>
+          <button id="btnHand" class="secondary" disabled>Enable hand control</button>
+          <button id="btnRestart" class="secondary" disabled>Restart (Phase 1)</button>
+          <button id="btnShuffle" disabled>Shuffle</button>
+          <button id="btnDemo" class="secondary">Demo image</button>
+          <button id="btnTests" class="secondary">Run self-tests</button>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="row">
+          <label>Grid
+            <select id="gridSel">
+              <option value="3" selected>3×3 (giống Gemini)</option>
+              <option value="4">4×4</option>
+              <option value="5">5×5</option>
+            </select>
+          </label>
+          <label>Detect rate (fps)
+            <input id="detectFps" type="range" min="10" max="30" value="18" />
+          </label>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="row">
+          <label>Pinch threshold
+            <input id="pinchRange" type="range" min="18" max="110" value="46" />
+          </label>
+          <label>Stability (0–100)
+            <input id="stabilityRange" type="range" min="0" max="100" value="82" />
+          </label>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="row">
+          <label style="display:flex; gap:10px; align-items:center;">
+            <input id="mirrorChk" type="checkbox" checked />
+            Mirror (selfie)
+          </label>
+          <label style="display:flex; gap:10px; align-items:center;">
+            <input id="skeletonChk" type="checkbox" checked />
+            Draw hand skeleton
+          </label>
+        </div>
+
+        <div style="height:10px"></div>
+        <label style="display:block;">
+          Upload ảnh (fallback nếu camera bị chặn)
+          <input id="fileInput" type="file" accept="image/*" />
+        </label>
+
+        <details>
+          <summary>Notes</summary>
+          <pre>• Camera cần https:// hoặc localhost.
+• Mượt hơn nhờ: pinch hysteresis + lọc (One-Euro) cho cursor + throttling detect.
+
+Phase 1 (CAPTURE)
+- Có 2 tay → app dựng 1 khung vuông “ổn định” dựa trên vị trí 2 bàn tay.
+- Pinch cả 2 tay (index+thumb) → SNAP gần như tức thời.
+
+Phase 2 (SOLVE)
+- Con trỏ: vòng tròn xanh (không pinch) / chấm đặc xanh (đang pinch).
+- Pinch: Pick tile đang trỏ. Drag sang ô khác. Drop pinch: Swap.
+- Hold Fist ~0.6s để reset về Phase 1.</pre>
+        </details>
+
+        <div class="tiny" style="margin-top:10px">
+          Hand tracking: <span class="mono">@mediapipe/tasks-vision</span> (HandLandmarker).
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Stage</h2>
+      <div class="content">
+        <canvas id="canvas" width="960" height="720"></canvas>
+        <div class="hud">
+          <div class="badge" id="badge">Phase 1: CAPTURE</div>
+          <div class="status bad" id="status">Not solved</div>
+        </div>
+        <div class="tiny" id="handHud" style="margin-top:8px; color: var(--muted)">Hand: off</div>
+      </div>
+    </section>
+  </div>
+
+<script type="module">
+(() => {
+  /*** Elements ***/
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+  const btnHand = document.getElementById('btnHand');
+  const btnRestart = document.getElementById('btnRestart');
+  const btnShuffle = document.getElementById('btnShuffle');
+  const btnDemo = document.getElementById('btnDemo');
+  const btnTests = document.getElementById('btnTests');
+
+  const gridSel = document.getElementById('gridSel');
+  const detectFps = document.getElementById('detectFps');
+  const pinchRange = document.getElementById('pinchRange');
+  const stabilityRange = document.getElementById('stabilityRange');
+  const mirrorChk = document.getElementById('mirrorChk');
+  const skeletonChk = document.getElementById('skeletonChk');
+  const fileInput = document.getElementById('fileInput');
+
+  const badge = document.getElementById('badge');
+  const statusEl = document.getElementById('status');
+  const banner = document.getElementById('banner');
+  const handHud = document.getElementById('handHud');
+
+  /*** Banner helpers ***/
+  function showBanner(kind, html){
+    banner.className = `banner ${kind}`;
+    banner.innerHTML = html;
+    banner.style.display = 'block';
+  }
+  function hideBanner(){ banner.style.display = 'none'; }
+
+  /*** Environment checks ***/
+  const hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const isSecure = window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+  if(!hasMediaDevices){
+    showBanner('bad', `<b>Trình duyệt không hỗ trợ camera API.</b> Bạn có thể dùng <b>Upload ảnh</b> hoặc <b>Demo image</b>.`);
+    btnStart.disabled = true;
+  } else if(!isSecure){
+    showBanner('warn', `<b>Camera có thể bị chặn vì không phải secure context.</b> Hãy chạy qua <b>https://</b> hoặc <b>http://localhost</b>. (Mở file trực tiếp <code>file://</code> thường sẽ bị chặn).`);
+  } else {
+    showBanner('ok', `Sẵn sàng. Bấm <b>Start camera</b> → <b>Enable hand control</b>.`);
+  }
+
+  /*** Camera ***/
+  let stream = null;
+
+  async function startCamera(){
+    hideBanner();
+    if(!hasMediaDevices){
+      showBanner('bad', `Trình duyệt không hỗ trợ camera API. Hãy dùng <b>Upload ảnh</b> hoặc <b>Demo image</b>.`);
+      return;
+    }
+
+    const tryConstraints = [
+      { video: { facingMode: { ideal: 'user' } }, audio: false },
+      { video: { facingMode: { ideal: 'environment' } }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    let lastErr = null;
+    for(const c of tryConstraints){
+      try{
+        stream = await navigator.mediaDevices.getUserMedia(c);
+        lastErr = null;
+        break;
+      }catch(e){ lastErr = e; }
+    }
+
+    if(lastErr){ handleGetUserMediaError(lastErr); return; }
+
+    video.srcObject = stream;
+    try{ await video.play(); }catch(e){ console.warn('video.play() blocked:', e); }
+
+    btnStop.disabled = false;
+    btnStart.disabled = true;
+    btnHand.disabled = false;
+
+    showBanner('ok', `Camera đang chạy. Bấm <b>Enable hand control</b>.`);
+  }
+
+  function stopCamera(){
+    disableHandControl();
+    if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    video.srcObject = null;
+    btnStop.disabled = true;
+    btnHand.disabled = true;
+    btnStart.disabled = false;
+    showBanner('warn', `Camera đã dừng. Bạn có thể chạy lại hoặc dùng Upload/Demo.`);
+  }
+
+  function handleGetUserMediaError(e){
+    console.error(e);
+    const name = e && e.name ? e.name : 'Error';
+    let msg = `<b>Không mở được camera</b> (${name}). `;
+
+    if(name === 'NotAllowedError' || name === 'SecurityError'){
+      msg += `
+        Quyền camera đang bị <b>từ chối</b> hoặc <b>bị trình duyệt chặn</b>.<br>
+        <b>Cách sửa nhanh:</b>
+        <ol style="margin:8px 0 0 18px; padding:0; color:inherit;">
+          <li>Chạy trang qua <b>https://</b> hoặc <b>http://localhost</b> (không dùng <code>file://</code>).</li>
+          <li>Chrome: click biểu tượng ổ khóa/setting cạnh URL → <b>Camera</b> → <b>Allow</b>.</li>
+          <li>Windows/macOS: bật quyền Camera cho trình duyệt trong Privacy settings.</li>
+        </ol>
+        <div style="margin-top:8px">Bạn vẫn chơi được bằng <b>Upload ảnh</b> hoặc <b>Demo image</b>.</div>
+      `;
+      showBanner('bad', msg);
+    } else if(name === 'NotFoundError'){
+      showBanner('bad', msg + `Không tìm thấy camera. Dùng Upload/Demo.`);
+    } else if(name === 'NotReadableError'){
+      showBanner('warn', msg + `Camera có thể đang bận. Đóng app khác đang dùng camera rồi thử lại.`);
+    } else {
+      showBanner('warn', msg + `Hãy thử lại, hoặc dùng Upload/Demo.`);
+    }
+
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    btnHand.disabled = true;
+  }
+
+  btnStart.addEventListener('click', startCamera);
+  btnStop.addEventListener('click', stopCamera);
+
+  /*** Game mode ***/
+  const Mode = { CAPTURE: 'capture', PLAY: 'play' };
+  let mode = Mode.CAPTURE;
+
+  function setMode(m){
+    mode = m;
+    if(mode === Mode.CAPTURE){
+      badge.textContent = 'Phase 1: CAPTURE';
+      btnRestart.disabled = true;
+      btnShuffle.disabled = true;
+      statusEl.textContent = 'Not solved';
+      statusEl.className = 'status bad';
+      ui.timerStart = 0;
+    } else {
+      badge.textContent = 'Phase 2: SOLVE';
+      btnRestart.disabled = false;
+      btnShuffle.disabled = false;
+      ui.timerStart = performance.now();
+      updateStatus();
+    }
+  }
+
+  btnRestart.addEventListener('click', () => resetToCapture());
+
+  function resetToCapture(){
+    sourceBitmap = null;
+    tiles = [];
+    picked = null;
+    hoverCell = null;
+    ui.playArea = computePlayArea();
+    setMode(Mode.CAPTURE);
+  }
+
+  /*** Puzzle state ***/
+  let N = parseInt(gridSel.value, 10);
+  let sourceBitmap = null;
+  let tiles = []; // each tile has id, ox/oy, x/y
+
+  let tileW = 0, tileH = 0;
+
+  // Swap picking
+  let picked = null;      // tile
+  let hoverCell = null;   // {x,y}
+
+  function computePlayArea(){
+    // Gemini-like: centered square, not full canvas
+    const side = Math.floor(Math.min(canvas.width, canvas.height) * 0.68);
+    const x = Math.floor((canvas.width - side) / 2);
+    const y = Math.floor((canvas.height - side) / 2) + 10; // slightly lower
+    return {x, y, w: side, h: side};
+  }
+
+  const ui = {
+    playArea: computePlayArea(),
+    timerStart: 0,
+  };
+
+  function initSolvedFromBitmap(){
+    if(!sourceBitmap) return;
+    N = parseInt(gridSel.value, 10);
+    tileW = Math.floor(ui.playArea.w / N);
+    tileH = Math.floor(ui.playArea.h / N);
+
+    tiles = [];
+    let id = 0;
+    for(let gy=0; gy<N; gy++){
+      for(let gx=0; gx<N; gx++){
+        tiles.push({ id: id++, ox: gx, oy: gy, x: gx, y: gy });
+      }
+    }
+
+    picked = null;
+    hoverCell = null;
+    setMode(Mode.PLAY);
+  }
+
+  function shuffleTiles(){
+    if(!tiles.length) return;
+    const positions = tiles.map(t => ({x:t.x, y:t.y}));
+    for(let i=positions.length-1; i>0; i--){
+      const j = (Math.random()*(i+1))|0;
+      [positions[i], positions[j]] = [positions[j], positions[i]];
+    }
+    tiles.forEach((t, idx) => { t.x = positions[idx].x; t.y = positions[idx].y; });
+    updateStatus();
+  }
+  btnShuffle.addEventListener('click', shuffleTiles);
+
+  function isSolved(){ return tiles.length > 0 && tiles.every(t => t.x === t.ox && t.y === t.oy); }
+  function updateStatus(){
+    const ok = isSolved();
+    statusEl.textContent = ok ? 'Solved ✅' : 'Not solved';
+    statusEl.className = 'status ' + (ok ? 'ok' : 'bad');
+  }
+
+  gridSel.addEventListener('change', () => {
+    N = parseInt(gridSel.value, 10);
+    if(sourceBitmap) initSolvedFromBitmap();
+  });
+
+  /*** Upload fallback ***/
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files && fileInput.files[0];
+    if(!f) return;
+
+    try{
+      const img = await fileToImage(f);
+      sourceBitmap = await imageToFittedBitmap(img, ui.playArea.w, ui.playArea.h);
+      showBanner('ok', `Đã load ảnh. Chuyển sang Phase 2.`);
+      initSolvedFromBitmap();
+    } catch(e){
+      console.error(e);
+      showBanner('bad', `Không đọc được ảnh upload. Hãy thử ảnh khác.`);
+    } finally {
+      fileInput.value = '';
+    }
+  });
+
+  async function fileToImage(file){
+    const url = URL.createObjectURL(file);
+    try{
+      const img = new Image();
+      img.decoding = 'async';
+      img.loading = 'eager';
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function imageToFittedBitmap(img, width, height){
+    const off = document.createElement('canvas');
+    off.width = width;
+    off.height = height;
+    const octx = off.getContext('2d');
+
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    const iAspect = iw / ih;
+    const cAspect = width / height;
+
+    let sx=0, sy=0, sw=iw, sh=ih;
+    if(iAspect > cAspect){
+      sh = ih;
+      sw = Math.floor(ih * cAspect);
+      sx = Math.floor((iw - sw)/2);
+    } else {
+      sw = iw;
+      sh = Math.floor(iw / cAspect);
+      sy = Math.floor((ih - sh)/2);
+    }
+
+    octx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+    return await createImageBitmap(off);
+  }
+
+  /*** Demo image ***/
+  btnDemo.addEventListener('click', async () => {
+    const off = document.createElement('canvas');
+    off.width = ui.playArea.w;
+    off.height = ui.playArea.h;
+    const octx = off.getContext('2d');
+
+    const g = octx.createLinearGradient(0,0,off.width,off.height);
+    g.addColorStop(0, '#0ea5e9');
+    g.addColorStop(0.5, '#a78bfa');
+    g.addColorStop(1, '#22c55e');
+    octx.fillStyle = g;
+    octx.fillRect(0,0,off.width,off.height);
+
+    octx.globalAlpha = 0.9;
+    octx.fillStyle = 'rgba(0,0,0,0.35)';
+    octx.fillRect(26, 26, 320, 120);
+    octx.fillStyle = 'rgba(255,255,255,0.92)';
+    octx.font = '800 52px ui-sans-serif, system-ui';
+    octx.fillText('SNAP', 54, 92);
+    octx.font = '600 20px ui-sans-serif, system-ui';
+    octx.fillText('Pinch to Pick & Swap', 56, 122);
+    octx.globalAlpha = 1;
+
+    sourceBitmap = await createImageBitmap(off);
+    showBanner('ok', `Demo image sẵn sàng. Chuyển sang Phase 2.`);
+    initSolvedFromBitmap();
+  });
+
+  /*** Mouse fallback in PLAY: click-drag to swap ***/
+  let mouseDown = false;
+  canvas.addEventListener('pointerdown', (e) => {
+    if(mode !== Mode.PLAY || !tiles.length) return;
+    if(handState.enabled && handState.pinchAny) return;
+    mouseDown = true;
+    const p = canvasPoint(e);
+    const cell = cellFromPoint(p.x, p.y);
+    if(!cell) return;
+    pickCell(cell.x, cell.y);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if(mode !== Mode.PLAY || !tiles.length) return;
+    const p = canvasPoint(e);
+    const cell = cellFromPoint(p.x, p.y);
+    hoverCell = cell;
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if(mode !== Mode.PLAY || !tiles.length) return;
+    if(!mouseDown) return;
+    mouseDown = false;
+    const p = canvasPoint(e);
+    const cell = cellFromPoint(p.x, p.y);
+    if(!cell) { picked = null; return; }
+    dropToCell(cell.x, cell.y);
+  });
+
+  function canvasPoint(e){
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    return {x, y};
+  }
+
+  function cellFromPoint(x, y){
+    const {x:ax, y:ay, w:aw, h:ah} = ui.playArea;
+    if(x < ax || y < ay || x >= ax + aw || y >= ay + ah) return null;
+    const gx = Math.floor((x - ax) / tileW);
+    const gy = Math.floor((y - ay) / tileH);
+    if(gx < 0 || gx >= N || gy < 0 || gy >= N) return null;
+    return {x: gx, y: gy};
+  }
+
+  function tileAtCell(gx, gy){
+    return tiles.find(t => t.x === gx && t.y === gy) || null;
+  }
+
+  function pickCell(gx, gy){ picked = tileAtCell(gx, gy); }
+
+  function dropToCell(gx, gy){
+    if(!picked) return;
+    const other = tileAtCell(gx, gy);
+    if(other && other !== picked){
+      const ox = other.x, oy = other.y;
+      other.x = picked.x; other.y = picked.y;
+      picked.x = ox; picked.y = oy;
+      updateStatus();
+    }
+    picked = null;
+  }
+
+  /*** Hand control (MediaPipe Tasks Vision) ***/
+  btnHand.addEventListener('click', async () => {
+    if(!handState.enabled) await enableHandControl();
+    else disableHandControl();
+  });
+
+  /** One-Euro filter (cursor smoothing that still feels responsive) */
+  function makeOneEuro({minCutoff=1.2, beta=0.015, dCutoff=1.0}={}){
+    let xPrev = null;
+    let dxPrev = 0;
+    let tPrev = null;
+
+    function alpha(cutoff, dt){
+      const r = 2*Math.PI*cutoff*dt;
+      return r/(r+1);
+    }
+
+    function lowpass(a, x, prev){
+      return prev + a*(x - prev);
+    }
+
+    return {
+      reset(){ xPrev=null; dxPrev=0; tPrev=null; },
+      filter(t, x){
+        if(tPrev == null){ tPrev=t; xPrev=x; dxPrev=0; return x; }
+        const dt = Math.max(1/120, (t - tPrev)/1000);
+        tPrev = t;
+
+        const dx = (x - xPrev)/dt;
+        const aD = alpha(dCutoff, dt);
+        const dxHat = lowpass(aD, dx, dxPrev);
+        dxPrev = dxHat;
+
+        const cutoff = minCutoff + beta*Math.abs(dxHat);
+        const a = alpha(cutoff, dt);
+        const xHat = lowpass(a, x, xPrev);
+        xPrev = xHat;
+        return xHat;
+      }
+    };
+  }
+
+  function stabilityToEuroParams(){
+    // stability 0..100: higher = smoother
+    const s = parseInt(stabilityRange.value, 10)/100;
+    // When s high: smaller beta, smaller minCutoff
+    const minCutoff = 0.9 + (1-s)*1.6; // 0.9..2.5
+    const beta = 0.006 + (1-s)*0.05;   // 0.006..0.056
+    return {minCutoff, beta, dCutoff: 1.0};
+  }
+
+  const cursorFx = {
+    x: makeOneEuro(stabilityToEuroParams()),
+    y: makeOneEuro(stabilityToEuroParams())
+  };
+
+  const captureFx = {
+    cx: makeOneEuro({minCutoff: 1.1, beta: 0.01}),
+    cy: makeOneEuro({minCutoff: 1.1, beta: 0.01}),
+    s:  makeOneEuro({minCutoff: 1.2, beta: 0.01}),
+  };
+
+  stabilityRange.addEventListener('input', () => {
+    const p = stabilityToEuroParams();
+    cursorFx.x = makeOneEuro(p);
+    cursorFx.y = makeOneEuro(p);
+  });
+
+  /** Pinch hysteresis (to avoid flicker) */
+  function pinchWithHysteresis(dist, onTh, offTh, prev){
+    if(prev){ return dist < offTh; }
+    return dist < onTh;
+  }
+
+  const handState = {
+    enabled: false,
+    landmarker: null,
+    lastVideoTime: -1,
+    fps: 0,
+    _fpsT: performance.now(),
+    _fpsN: 0,
+
+    // cursor
+    cx: canvas.width/2,
+    cy: canvas.height/2,
+
+    // pinch per hand
+    pinch: [false, false],
+    pinchAny: false,
+
+    // fist detect
+    fistHoldAt: 0,
+
+    // capture
+    captureRect: null,
+    snapCooldownUntil: 0,
+
+    // landmarks
+    hands: [],
+
+    _prevPinchAny: false,
+    _lastDetectAt: 0,
+  };
+
+  let handRaf = null;
+
+  async function enableHandControl(){
+    if(!stream){
+      showBanner('warn', `Cần <b>Start camera</b> trước khi bật hand control.`);
+      return;
+    }
+
+    btnHand.disabled = true;
+    btnHand.textContent = 'Loading hand model…';
+
+    try{
+      const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+      const { HandLandmarker, FilesetResolver } = vision;
+
+      const fileset = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+      );
+
+      const landmarker = await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task'
+        },
+        runningMode: 'VIDEO',
+        numHands: 2
+      });
+
+      handState.landmarker = landmarker;
+      handState.enabled = true;
+      handState.pinch = [false, false];
+      handState.pinchAny = false;
+      handState.captureRect = null;
+      handState.snapCooldownUntil = 0;
+      handState.fistHoldAt = 0;
+      handState.hands = [];
+      handState._prevPinchAny = false;
+      handState._lastDetectAt = 0;
+
+      cursorFx.x.reset();
+      cursorFx.y.reset();
+      captureFx.cx.reset();
+      captureFx.cy.reset();
+      captureFx.s.reset();
+
+      btnHand.textContent = 'Disable hand control';
+      btnHand.disabled = false;
+
+      showBanner('ok', `Hand control đã bật. (Gemini-like) Phase 1: pinch BOTH hands to SNAP.`);
+      runHandLoop();
+    } catch(e){
+      console.error(e);
+      handState.enabled = false;
+      handState.landmarker = null;
+      btnHand.textContent = 'Enable hand control';
+      btnHand.disabled = false;
+      showBanner('bad', `Không load được MediaPipe Hands. Hãy thử lại hoặc kiểm tra mạng.`);
+    }
+  }
+
+  function disableHandControl(){
+    if(handRaf){ cancelAnimationFrame(handRaf); handRaf = null; }
+    if(handState.landmarker){ try{ handState.landmarker.close(); } catch {} }
+
+    handState.enabled = false;
+    handState.landmarker = null;
+    handState.hands = [];
+    handState.pinch = [false, false];
+    handState.pinchAny = false;
+    handState.captureRect = null;
+
+    btnHand.textContent = 'Enable hand control';
+    btnHand.disabled = !stream;
+    handHud.textContent = 'Hand: off';
+  }
+
+  function runHandLoop(){
+    const lm = handState.landmarker;
+    if(!handState.enabled || !lm) return;
+
+    const now = performance.now();
+
+    // local fps counter
+    handState._fpsN++;
+    if(now - handState._fpsT > 500){
+      handState.fps = Math.round((handState._fpsN * 1000) / (now - handState._fpsT));
+      handState._fpsT = now;
+      handState._fpsN = 0;
+    }
+
+    // throttle detect
+    const targetDetectMs = 1000 / parseInt(detectFps.value, 10);
+    if(now - handState._lastDetectAt >= targetDetectMs){
+      handState._lastDetectAt = now;
+
+      const vTime = video.currentTime;
+      if(vTime !== handState.lastVideoTime){
+        handState.lastVideoTime = vTime;
+
+        const res = lm.detectForVideo(video, now);
+        const allHands = res?.landmarks || [];
+        handState.hands = allHands;
+
+        // pinch per hand (hysteresis)
+        const onTh = parseInt(pinchRange.value, 10);
+        const offTh = Math.max(10, onTh + 10);
+        const pinches = [false, false];
+
+        for(let i=0;i<Math.min(2, allHands.length);i++){
+          const h = allHands[i];
+          if(!h || h.length < 9) continue;
+          const idx = h[8];
+          const thb = h[4];
+          // scale to ~1000 like before
+          const d = dist2D(thb.x, thb.y, idx.x, idx.y) * 1000;
+          pinches[i] = pinchWithHysteresis(d, onTh, offTh, handState.pinch[i]);
+        }
+
+        handState.pinch = pinches;
+        handState.pinchAny = pinches[0] || pinches[1];
+
+        // cursor: use stable "palm center" but align with Gemini (index tip feel)
+        // compromise: blend 70% index tip + 30% palm center for stability
+        if(allHands[0] && allHands[0].length >= 21){
+          const h0 = allHands[0];
+          const idx = h0[8];
+          const palm = palmCenter(h0);
+          const bx = idx.x*0.7 + palm.x*0.3;
+          const by = idx.y*0.7 + palm.y*0.3;
+
+          const mirror = mirrorChk.checked;
+          const rawX = mirror ? (1 - bx) : bx;
+
+          const tx = clamp(rawX * canvas.width, 0, canvas.width);
+          const ty = clamp(by * canvas.height, 0, canvas.height);
+
+          handState.cx = cursorFx.x.filter(now, tx);
+          handState.cy = cursorFx.y.filter(now, ty);
+
+          if(mode === Mode.PLAY){
+            const cell = cellFromPoint(handState.cx, handState.cy);
+            hoverCell = cell;
+          }
+        }
+
+        // fist to reset
+        const fist = anyFist(allHands);
+        if(fist){
+          if(handState.fistHoldAt === 0) handState.fistHoldAt = now;
+          if(now - handState.fistHoldAt > 600){
+            handState.fistHoldAt = 0;
+            resetToCapture();
+            showBanner('ok', `Reset (Hold Fist). Quay lại Phase 1.`);
+          }
+        } else {
+          handState.fistHoldAt = 0;
+        }
+
+        // Phase logic
+        if(mode === Mode.CAPTURE){
+          handleCapturePhase(now);
+        } else {
+          handlePlayPhase();
+        }
+
+        handHud.textContent = `Hand: on • detect~${parseInt(detectFps.value,10)}fps • hands=${allHands.length} • pinch=[${pinches.map(p=>p?'Y':'n').join(',')}]`;
+      }
+    }
+
+    handRaf = requestAnimationFrame(runHandLoop);
+  }
+
+  function handleCapturePhase(now){
+    // Need 2 hands
+    const twoHands = handState.hands.length >= 2;
+    if(!twoHands){
+      handState.captureRect = null;
+      return;
+    }
+
+    // Gemini-like: square frame centered between 2 palms, size from distance
+    const hA = handState.hands[0];
+    const hB = handState.hands[1];
+    const pA = palmCenter(hA);
+    const pB = palmCenter(hB);
+
+    const mid = {x:(pA.x+pB.x)/2, y:(pA.y+pB.y)/2};
+    const d = dist2D(pA.x,pA.y,pB.x,pB.y);
+
+    // map normalized distance to pixel size
+    const minSide = Math.min(canvas.width, canvas.height) * 0.28;
+    const maxSide = Math.min(canvas.width, canvas.height) * 0.80;
+    let side = clamp(d * Math.min(canvas.width, canvas.height) * 1.05, minSide, maxSide);
+
+    const mirror = mirrorChk.checked;
+    const rawX = mirror ? (1 - mid.x) : mid.x;
+    const cx = captureFx.cx.filter(now, rawX * canvas.width);
+    const cy = captureFx.cy.filter(now, mid.y * canvas.height);
+    side = captureFx.s.filter(now, side);
+
+    const x = clamp(cx - side/2, 0, canvas.width - side);
+    const y = clamp(cy - side/2, 0, canvas.height - side);
+
+    handState.captureRect = {x, y, w: side, h: side};
+
+    // Snap: pinch BOTH hands (almost instant) with cooldown
+    const bothPinch = handState.pinch[0] && handState.pinch[1];
+    if(bothPinch && now >= handState.snapCooldownUntil){
+      handState.snapCooldownUntil = now + 900;
+      snapCaptureSquare(handState.captureRect);
+    }
+  }
+
+  function handlePlayPhase(){
+    const pinch = handState.pinchAny;
+
+    // pinch edge
+    if(pinch && !handState._prevPinchAny){
+      if(hoverCell) pickCell(hoverCell.x, hoverCell.y);
+    }
+
+    if(!pinch && handState._prevPinchAny){
+      if(hoverCell) dropToCell(hoverCell.x, hoverCell.y);
+      picked = null;
+    }
+
+    handState._prevPinchAny = pinch;
+  }
+
+  function palmCenter(h){
+    // average a few stable palm joints
+    const idxs = [0,5,9,13,17];
+    let x=0,y=0;
+    for(const i of idxs){ x += h[i].x; y += h[i].y; }
+    return {x:x/idxs.length, y:y/idxs.length};
+  }
+
+  function anyFist(allHands){
+    // crude fist: tips close to palm center (relative to hand size)
+    for(const h of allHands.slice(0,2)){
+      if(!h || h.length < 21) continue;
+      const pc = palmCenter(h);
+      const wrist = h[0];
+      const scale = Math.max(0.001, dist2D(wrist.x,wrist.y,h[9].x,h[9].y));
+      const tips = [4,8,12,16,20];
+      const avg = tips.map(i => dist2D(h[i].x,h[i].y,pc.x,pc.y)/scale).reduce((a,b)=>a+b,0)/tips.length;
+      if(avg < 0.55) return true; // lower = more closed
+    }
+    return false;
+  }
+
+  async function snapCaptureSquare(rect){
+    if(!stream) return;
+
+    // draw video to offscreen (canvas size) first (cover-fit) so coords match
+    const off = document.createElement('canvas');
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const octx = off.getContext('2d');
+
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    const cw = off.width, ch = off.height;
+    const vAspect = vw / vh;
+    const cAspect = cw / ch;
+
+    let sx=0, sy=0, sw=vw, sh=vh;
+    if(vAspect > cAspect){
+      sh = vh;
+      sw = Math.floor(vh * cAspect);
+      sx = Math.floor((vw - sw)/2);
+    } else {
+      sw = vw;
+      sh = Math.floor(vw / cAspect);
+      sy = Math.floor((vh - sh)/2);
+    }
+
+    octx.save();
+    if(mirrorChk.checked){
+      octx.translate(cw, 0);
+      octx.scale(-1, 1);
+    }
+    octx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
+    octx.restore();
+
+    // crop rect → fit into playArea square
+    const crop = document.createElement('canvas');
+    crop.width = ui.playArea.w;
+    crop.height = ui.playArea.h;
+    const cctx = crop.getContext('2d');
+
+    const rw = Math.max(24, rect.w);
+    const rh = Math.max(24, rect.h);
+
+    cctx.drawImage(off, rect.x, rect.y, rw, rh, 0, 0, crop.width, crop.height);
+
+    sourceBitmap = await createImageBitmap(crop);
+    showBanner('ok', `<b>SNAP!</b> Phase 2: Pinch to pick, Drag & Drop to swap. (Hold Fist to reset)`);
+    initSolvedFromBitmap();
+  }
+
+  /*** Helpers ***/
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+  function dist2D(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
+
+  /*** Draw (Gemini-like UI overlay) ***/
+  const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17]
+  ];
+
+  function renderLoop(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if(stream){
+      drawLiveVideo();
+      if(handState.enabled) drawHandsOverlay();
+
+      if(mode === Mode.CAPTURE){
+        drawCaptureOverlay();
+      } else {
+        drawPuzzleOverlay();
+      }
+
+      if(handState.enabled) drawCursor();
+    } else if(sourceBitmap){
+      // camera off but has bitmap
+      drawPuzzleOverlay(true);
+    } else {
+      drawIdle();
+    }
+
+    requestAnimationFrame(renderLoop);
+  }
+
+  function drawLiveVideo(){
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    const cw = canvas.width;
+    const ch = canvas.height;
+
+    const vAspect = vw / vh;
+    const cAspect = cw / ch;
+
+    let sx=0, sy=0, sw=vw, sh=vh;
+    if(vAspect > cAspect){
+      sh = vh;
+      sw = Math.floor(vh * cAspect);
+      sx = Math.floor((vw - sw)/2);
+    } else {
+      sw = vw;
+      sh = Math.floor(vw / cAspect);
+      sy = Math.floor((vh - sh)/2);
+    }
+
+    ctx.save();
+    if(mirrorChk.checked){
+      ctx.translate(cw, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
+    ctx.restore();
+
+    // slight vignette like demo
+    const g = ctx.createRadialGradient(cw/2, ch/2, Math.min(cw,ch)*0.25, cw/2, ch/2, Math.min(cw,ch)*0.85);
+    g.addColorStop(0, 'rgba(0,0,0,0.00)');
+    g.addColorStop(1, 'rgba(0,0,0,0.30)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,cw,ch);
+  }
+
+  function drawHandsOverlay(){
+    if(!skeletonChk.checked) return;
+    const hands = handState.hands || [];
+    if(!hands.length) return;
+
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+
+    for(let hi=0; hi<Math.min(2, hands.length); hi++){
+      const h = hands[hi];
+      for(const [a,b] of HAND_CONNECTIONS){
+        const pa = h[a];
+        const pb = h[b];
+        if(!pa || !pb) continue;
+        const ax = (mirrorChk.checked ? (1-pa.x) : pa.x) * canvas.width;
+        const ay = pa.y * canvas.height;
+        const bx = (mirrorChk.checked ? (1-pb.x) : pb.x) * canvas.width;
+        const by = pb.y * canvas.height;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+      }
+      for(const p of h){
+        const x = (mirrorChk.checked ? (1-p.x) : p.x) * canvas.width;
+        const y = p.y * canvas.height;
+        ctx.beginPath();
+        ctx.arc(x, y, 2.7, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function drawTopBar(){
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, canvas.width, 70);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 70, canvas.width, 8);
+
+    // title
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+    ctx.restore();
+
+    // draw title text (lime)
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, canvas.width, 70);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.0)';
+
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+    ctx.font = '900 36px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('LIVE PUZZLE', canvas.width/2, 44);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '600 16px ui-sans-serif, system-ui';
+    ctx.fillText('Frame it to Snap. Pinch & Drag to Swap.', canvas.width/2, 64);
+
+    ctx.restore();
+  }
+
+  function drawRightPanel(lines, title){
+    const panelW = 270;
+    const panelH = 120;
+    const x = canvas.width - panelW - 22;
+    const y = 86;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRect(ctx, x, y, panelW, panelH, 10);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+    ctx.font = '800 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(title, x+16, y+26);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.90)';
+    ctx.font = '600 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+
+    let ty = y + 50;
+    for(const ln of lines){
+      ctx.fillText(ln, x+16, ty);
+      ty += 20;
+    }
+    ctx.restore();
+  }
+
+  function drawCaptureOverlay(){
+    drawTopBar();
+    drawRightPanel([
+      '1. Form a frame with two hands',
+      '2. Pinch both hands to SNAP'
+    ], 'PHASE 1: CAPTURE');
+
+    // hint text like demo
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.font = '800 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PINCH TO CAPTURE', canvas.width/2, 188);
+    ctx.restore();
+
+    // square frame
+    if(handState.captureRect){
+      ctx.save();
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(handState.captureRect.x, handState.captureRect.y, handState.captureRect.w, handState.captureRect.h);
+      ctx.restore();
+    }
+  }
+
+  function drawPuzzleOverlay(forceStatic=false){
+    drawTopBar();
+
+    drawRightPanel([
+      '1. Pinch to Pick Up',
+      '2. Drag & Drop to Swap',
+      'Hold Fist to Reset'
+    ], 'PHASE 2: SOLVE');
+
+    // timer bubble
+    if(ui.timerStart){
+      const t = Math.max(0, Math.floor((performance.now() - ui.timerStart)/1000));
+      const mm = String(Math.floor(t/60)).padStart(1,'0');
+      const ss = String(t%60).padStart(2,'0');
+      const label = `${mm}:${ss}`;
+      const bx = canvas.width/2;
+      const by = 92;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.62)';
+      roundRect(ctx, bx-62, by-18, 124, 36, 18);
+      ctx.fill();
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+      ctx.beginPath();
+      ctx.arc(bx-34, by, 7, 0, Math.PI*2);
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.font = '800 18px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, bx+14, by+6);
+      ctx.restore();
+    }
+
+    // play area: white border + grid
+    const A = ui.playArea;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(A.x, A.y, A.w, A.h);
+
+    // inside grid lines
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    for(let i=1;i<N;i++){
+      const gx = A.x + i*tileW;
+      const gy = A.y + i*tileH;
+      ctx.beginPath(); ctx.moveTo(gx, A.y); ctx.lineTo(gx, A.y+A.h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(A.x, gy); ctx.lineTo(A.x+A.w, gy); ctx.stroke();
+    }
+
+    // draw pieces
+    if(sourceBitmap && tiles.length){
+      for(const t of tiles){
+        const dx = A.x + t.x * tileW;
+        const dy = A.y + t.y * tileH;
+        const sx = t.ox * tileW;
+        const sy = t.oy * tileH;
+        ctx.drawImage(sourceBitmap, sx, sy, tileW, tileH, dx, dy, tileW, tileH);
+      }
+    }
+
+    // hover highlight (lime square) – show like Gemini
+    if(hoverCell){
+      ctx.save();
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(A.x + hoverCell.x*tileW + 2, A.y + hoverCell.y*tileH + 2, tileW-4, tileH-4);
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // little bottom-right hint
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '600 14px ui-sans-serif, system-ui';
+    ctx.textAlign = 'right';
+    ctx.fillText('Use Index+Thumb Pinch', canvas.width-24, canvas.height-22);
+    ctx.restore();
+
+    // left-bottom "reset" icon
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    roundRect(ctx, 28, canvas.height-86, 44, 44, 22);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+    ctx.lineWidth = 2;
+    // simple circular arrow
+    ctx.beginPath();
+    ctx.arc(50, canvas.height-64, 12, Math.PI*0.3, Math.PI*1.75);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(54, canvas.height-78);
+    ctx.lineTo(62, canvas.height-78);
+    ctx.lineTo(62, canvas.height-70);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCursor(){
+    const pinch = handState.pinchAny;
+    const x = handState.cx;
+    const y = handState.cy;
+
+    const lime = getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c9ff24';
+
+    ctx.save();
+    if(pinch){
+      // filled dot (Gemini-like)
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI*2);
+      ctx.fillStyle = lime;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.stroke();
+    } else {
+      // ring
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI*2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = lime;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawIdle(){
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = 'rgba(230,238,252,0.9)';
+    ctx.font = '700 22px ui-sans-serif, system-ui';
+    ctx.fillText('Bấm “Start camera” → “Enable hand control”', 22, 44);
+    ctx.fillStyle = 'rgba(169,183,214,0.9)';
+    ctx.font = '14px ui-sans-serif, system-ui';
+    ctx.fillText('Hoặc Demo / Upload ảnh để vào Phase 2 ngay.', 22, 70);
+    ctx.restore();
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    const rr = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+rr, y);
+    ctx.arcTo(x+w, y, x+w, y+h, rr);
+    ctx.arcTo(x+w, y+h, x, y+h, rr);
+    ctx.arcTo(x, y+h, x, y, rr);
+    ctx.arcTo(x, y, x+w, y, rr);
+    ctx.closePath();
+  }
+
+  /*** Self-tests ***/
+  btnTests.addEventListener('click', () => {
+    const results = [];
+    function assert(cond, label){
+      results.push({ label, ok: !!cond });
+      if(!cond) console.error('Test failed:', label);
+    }
+
+    (async () => {
+      // demo to init puzzle
+      await btnDemo.click();
+      await new Promise(r => setTimeout(r, 30));
+
+      const curN = parseInt(gridSel.value, 10);
+      assert(mode === Mode.PLAY, 'after demo, mode is PLAY');
+      assert(tiles.length === (curN ** 2), 'tiles count equals N^2');
+      assert(isSolved() === true, 'initial state is solved');
+
+      shuffleTiles();
+      assert(tiles.length === (curN ** 2), 'shuffle keeps tile count');
+
+      // Swap logic: swap (0,0) with (1,0)
+      const t00 = tileAtCell(0,0);
+      const t10 = tileAtCell(1,0);
+      pickCell(0,0);
+      dropToCell(1,0);
+      assert(tileAtCell(1,0) === t00, 'swap moved picked to target');
+      assert(tileAtCell(0,0) === t10, 'swap moved target to source');
+
+      // reset
+      resetToCapture();
+      assert(mode === Mode.CAPTURE, 'reset brings CAPTURE mode');
+
+      const passed = results.filter(r => r.ok).length;
+      showBanner(passed === results.length ? 'ok' : 'warn',
+        `<b>Self-tests:</b> ${passed}/${results.length} passed.<br>` +
+        results.map(r => `${r.ok ? '✅' : '❌'} ${r.label}`).join('<br>')
+      );
+    })();
+  });
+
+  /*** Wire buttons ***/
+  btnRestart.addEventListener('click', resetToCapture);
+
+  /*** Init ***/
+  setMode(Mode.CAPTURE);
+  renderLoop();
+})();
+</script>
+</body>
+</html>
